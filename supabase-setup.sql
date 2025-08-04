@@ -19,6 +19,13 @@ CREATE TABLE IF NOT EXISTS chat_logs (
   timestamp TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Create whatsapp_sessions table to store WhatsApp session data
+CREATE TABLE IF NOT EXISTS whatsapp_sessions (
+  session_id TEXT PRIMARY KEY,
+  session_data TEXT NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Create indexes for better performance
 CREATE INDEX IF NOT EXISTS idx_bookings_phone ON bookings(phone_number);
 CREATE INDEX IF NOT EXISTS idx_bookings_timestamp ON bookings(timestamp);
@@ -28,12 +35,16 @@ CREATE INDEX IF NOT EXISTS idx_chat_logs_timestamp ON chat_logs(timestamp);
 -- Enable Row Level Security (RLS) for better security
 ALTER TABLE bookings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE chat_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE whatsapp_sessions ENABLE ROW LEVEL SECURITY;
 
 -- Create policies to allow service role access (for your bot)
 CREATE POLICY "Allow service role access" ON bookings
   FOR ALL USING (auth.role() = 'service_role');
 
 CREATE POLICY "Allow service role access" ON chat_logs
+  FOR ALL USING (auth.role() = 'service_role');
+
+CREATE POLICY "Allow service role access" ON whatsapp_sessions
   FOR ALL USING (auth.role() = 'service_role');
 
 -- Optional: Create a view to see recent activity

@@ -1,4 +1,4 @@
-const { Client, LocalAuth } = require('whatsapp-web.js');
+const { Client, RemoteAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const express = require('express');
 const bodyParser = require('body-parser');
@@ -20,8 +20,73 @@ const supabase = createClient(
     process.env.SUPABASE_ANON_KEY
 );
 
-// WhatsApp client without persistent storage (for Render free tier)
+// Custom store for WhatsApp session using Supabase
+class SupabaseStore {
+    async sessionExists(options) {
+        try {
+            const { data } = await supabase
+                .from('whatsapp_sessions')
+                .select('session_data')
+                .eq('session_id', options.session)
+                .single();
+            return !!data;
+        } catch {
+            return false;
+        }
+    }
+
+    async save(options) {
+        try {
+            await supabase
+                .from('whatsapp_sessions')
+                .upsert([
+                    {
+                        session_id: options.session,
+                        session_data: JSON.stringify(options.data),
+                        updated_at: new Date().toISOString()
+                    }
+                ]);
+            console.log('Session saved to Supabase');
+        } catch (error) {
+            console.error('Error saving session:', error);
+        }
+    }
+
+    async extract(options) {
+        try {
+            const { data } = await supabase
+                .from('whatsapp_sessions')
+                .select('session_data')
+                .eq('session_id', options.session)
+                .single();
+            
+            return data ? JSON.parse(data.session_data) : null;
+        } catch (error) {
+            console.error('Error extracting session:', error);
+            return null;
+        }
+    }
+
+    async delete(options) {
+        try {
+            await supabase
+                .from('whatsapp_sessions')
+                .delete()
+                .eq('session_id', options.session);
+            console.log('Session deleted from Supabase');
+        } catch (error) {
+            console.error('Error deleting session:', error);
+        }
+    }
+}
+
+// WhatsApp client with persistent session storage
+const store = new SupabaseStore();
 const client = new Client({
+    authStrategy: new RemoteAuth({
+        store: store,
+        backupSyncIntervalMs: 300000 // 5 minutes
+    }),
     puppeteer: {
         headless: true,
         args: [
@@ -39,6 +104,7 @@ const client = new Client({
 
 // Store current QR code in memory
 let currentQRCode = null;
+let isWhatsAppReady = false;
 
 // FAQ responses
 const faqResponses = {
@@ -62,11 +128,17 @@ client.on('qr', (qr) => {
 client.on('ready', () => {
     console.log('WhatsApp client is ready!');
     currentQRCode = null; // Clear QR code when connected
+    isWhatsAppReady = true;
 });
 
 client.on('disconnected', (reason) => {
     console.log('WhatsApp client disconnected:', reason);
     currentQRCode = null;
+    isWhatsAppReady = false;
+});
+
+client.on('remote_session_saved', () => {
+    console.log('Session saved remotely');
 });
 
 client.on('message', async (message) => {
@@ -144,7 +216,7 @@ app.get('/api/status', (req, res) => {
     res.json({
         status: 'WhatsApp Bot is running',
         timestamp: new Date().toISOString(),
-        whatsappReady: client.info ? true : false
+        whatsappReady: isWhatsAppReady
     });
 });
 
@@ -156,10 +228,15 @@ app.get('/qr', (req, res) => {
             timestamp: new Date().toISOString(),
             message: 'Scan this QR code with WhatsApp'
         });
+    } else if (isWhatsAppReady) {
+        res.json({
+            message: 'WhatsApp is already connected! No need to scan QR code.',
+            whatsappReady: true
+        });
     } else {
         res.json({
-            message: 'No QR code available. Bot may already be connected or starting up.',
-            whatsappReady: client.info ? true : false
+            message: 'Bot is starting up... Please wait a moment and refresh.',
+            whatsappReady: false
         });
     }
 });
