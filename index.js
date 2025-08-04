@@ -95,16 +95,24 @@ client.on('auth_failure', (msg) => {
 });
 
 client.on('message', async (message) => {
+    console.log('=== Received WhatsApp Message ===');
+    console.log('From:', message.from);
+    console.log('Message:', message.body);
+    console.log('Timestamp:', new Date().toISOString());
+    
     const messageText = message.body.toLowerCase().trim();
 
     // Check if message matches any FAQ
     for (const [keyword, response] of Object.entries(faqResponses)) {
         if (messageText.includes(keyword)) {
+            console.log(`Matched keyword: ${keyword}`);
+            console.log(`Sending response: ${response}`);
+            
             await message.reply(response);
 
             // Log interaction to Supabase
             try {
-                await supabase
+                const { data, error } = await supabase
                     .from('chat_logs')
                     .insert([
                         {
@@ -114,6 +122,12 @@ client.on('message', async (message) => {
                             timestamp: new Date().toISOString()
                         }
                     ]);
+                
+                if (error) {
+                    console.error('Supabase chat log error:', error);
+                } else {
+                    console.log('Chat interaction logged to Supabase');
+                }
             } catch (error) {
                 console.error('Error logging to Supabase:', error);
             }
@@ -124,24 +138,48 @@ client.on('message', async (message) => {
 
 // Endpoint to receive data from Google Apps Script
 app.post('/send-whatsapp', async (req, res) => {
+    console.log('=== WhatsApp Send Request Received ===');
+    console.log('Request body:', JSON.stringify(req.body, null, 2));
+    console.log('WhatsApp ready status:', isWhatsAppReady);
+    
     try {
         const { countryCode, phoneNumber } = req.body;
 
         if (!countryCode || !phoneNumber) {
-            return res.status(400).json({ error: 'Missing country code or phone number' });
+            console.log('ERROR: Missing required data');
+            console.log('countryCode:', countryCode);
+            console.log('phoneNumber:', phoneNumber);
+            return res.status(400).json({ 
+                error: 'Missing country code or phone number',
+                received: { countryCode, phoneNumber }
+            });
+        }
+
+        // Check if WhatsApp is ready
+        if (!isWhatsAppReady) {
+            console.log('ERROR: WhatsApp client not ready');
+            return res.status(503).json({ 
+                error: 'WhatsApp client not ready. Please scan QR code first.',
+                whatsappReady: false
+            });
         }
 
         // Combine country code and phone number
         const fullPhoneNumber = `${countryCode}${phoneNumber}`;
         const chatId = `${fullPhoneNumber}@c.us`;
+        
+        console.log('Attempting to send message to:', fullPhoneNumber);
+        console.log('Chat ID:', chatId);
 
         // Send WhatsApp message
-        const message = 'Thanks for the booking. 🎉';
-        await client.sendMessage(chatId, message);
+        const message = 'Thanks for the booking. 🎉\n\nYour travel booking has been confirmed. If you have any questions, feel free to ask!';
+        
+        const sentMessage = await client.sendMessage(chatId, message);
+        console.log('Message sent successfully:', sentMessage.id._serialized);
 
         // Log to Supabase
         try {
-            await supabase
+            const { data, error } = await supabase
                 .from('bookings')
                 .insert([
                     {
@@ -151,16 +189,31 @@ app.post('/send-whatsapp', async (req, res) => {
                         timestamp: new Date().toISOString()
                     }
                 ]);
-        } catch (error) {
-            console.error('Error logging booking to Supabase:', error);
+            
+            if (error) {
+                console.error('Supabase insert error:', error);
+            } else {
+                console.log('Successfully logged to Supabase');
+            }
+        } catch (supabaseError) {
+            console.error('Error logging booking to Supabase:', supabaseError);
         }
 
-        console.log(`Message sent to ${fullPhoneNumber}: ${message}`);
-        res.json({ success: true, message: 'WhatsApp message sent successfully' });
+        console.log(`✅ SUCCESS: Message sent to ${fullPhoneNumber}`);
+        res.json({ 
+            success: true, 
+            message: 'WhatsApp message sent successfully',
+            phoneNumber: fullPhoneNumber,
+            messageId: sentMessage.id._serialized
+        });
 
     } catch (error) {
-        console.error('Error sending WhatsApp message:', error);
-        res.status(500).json({ error: 'Failed to send WhatsApp message' });
+        console.error('❌ ERROR sending WhatsApp message:', error);
+        console.error('Error details:', error.message);
+        res.status(500).json({ 
+            error: 'Failed to send WhatsApp message',
+            details: error.message
+        });
     }
 });
 
@@ -183,8 +236,53 @@ app.get('/debug', (req, res) => {
         isWhatsAppReady: isWhatsAppReady,
         qrCodeTimestamp: qrCodeTimestamp,
         clientState: client.info ? 'has_info' : 'no_info',
+        clientInfo: client.info || null,
         timestamp: new Date().toISOString()
     });
+});
+
+// Test endpoint to manually send WhatsApp message
+app.post('/test-whatsapp', async (req, res) => {
+    console.log('=== TEST WhatsApp Send ===');
+    
+    try {
+        // Test with your phone number
+        const testData = {
+            countryCode: '+91',
+            phoneNumber: '8475043504'
+        };
+        
+        console.log('Testing with data:', testData);
+        
+        if (!isWhatsAppReady) {
+            return res.status(503).json({ 
+                error: 'WhatsApp not ready. Scan QR code first.',
+                whatsappReady: false
+            });
+        }
+        
+        const fullPhoneNumber = `${testData.countryCode}${testData.phoneNumber}`;
+        const chatId = `${fullPhoneNumber}@c.us`;
+        const message = 'TEST: WhatsApp bot is working! 🎉';
+        
+        console.log('Sending test message to:', fullPhoneNumber);
+        
+        const sentMessage = await client.sendMessage(chatId, message);
+        
+        res.json({
+            success: true,
+            message: 'Test message sent successfully',
+            phoneNumber: fullPhoneNumber,
+            messageId: sentMessage.id._serialized
+        });
+        
+    } catch (error) {
+        console.error('Test message failed:', error);
+        res.status(500).json({
+            error: 'Test message failed',
+            details: error.message
+        });
+    }
 });
 
 // Endpoint to get QR code for scanning
