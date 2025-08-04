@@ -193,29 +193,45 @@ app.get('/qr', (req, res) => {
     console.log('isWhatsAppReady:', isWhatsAppReady);
     console.log('qrCodeTimestamp:', qrCodeTimestamp);
     
-    if (currentQRCode) {
-        console.log('Sending QR code to client');
-        res.json({
-            qr_code: currentQRCode,
-            timestamp: qrCodeTimestamp || new Date().toISOString(),
-            message: 'Scan this QR code with WhatsApp'
-        });
-    } else if (isWhatsAppReady) {
-        console.log('WhatsApp already connected');
-        res.json({
-            message: 'WhatsApp is already connected! No need to scan QR code.',
-            whatsappReady: true
-        });
-    } else {
-        console.log('No QR code available, bot starting up');
-        res.json({
-            message: 'Bot is starting up... Please wait a moment and refresh.',
-            whatsappReady: false,
-            debug: {
-                hasQRCode: !!currentQRCode,
-                isReady: isWhatsAppReady,
-                timestamp: new Date().toISOString()
-            }
+    // Set proper headers
+    res.header('Content-Type', 'application/json');
+    res.header('Cache-Control', 'no-cache');
+    
+    try {
+        if (currentQRCode) {
+            console.log('Sending QR code to client, length:', currentQRCode.length);
+            res.status(200).json({
+                qr_code: currentQRCode,
+                timestamp: qrCodeTimestamp || new Date().toISOString(),
+                message: 'Scan this QR code with WhatsApp',
+                success: true
+            });
+        } else if (isWhatsAppReady) {
+            console.log('WhatsApp already connected');
+            res.status(200).json({
+                message: 'WhatsApp is already connected! No need to scan QR code.',
+                whatsappReady: true,
+                success: true
+            });
+        } else {
+            console.log('No QR code available, bot starting up');
+            res.status(200).json({
+                message: 'Bot is starting up... Please wait a moment.',
+                whatsappReady: false,
+                success: false,
+                debug: {
+                    hasQRCode: !!currentQRCode,
+                    isReady: isWhatsAppReady,
+                    timestamp: new Date().toISOString()
+                }
+            });
+        }
+    } catch (error) {
+        console.error('Error in QR endpoint:', error);
+        res.status(500).json({
+            error: 'Internal server error',
+            message: error.message,
+            success: false
         });
     }
 });

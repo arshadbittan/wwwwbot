@@ -204,17 +204,31 @@
                 qrcodeEl.innerHTML = '';
                 
                 const response = await fetch('/qr');
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
                 const data = await response.json();
+                console.log('QR API Response:', data);
                 
                 if (data.qr_code) {
+                    console.log('QR Code received, length:', data.qr_code.length);
+                    
+                    // Create canvas element
+                    const canvas = document.createElement('canvas');
+                    qrcodeEl.innerHTML = '';
+                    qrcodeEl.appendChild(canvas);
+                    
                     // Generate QR code
-                    await QRCode.toCanvas(qrcodeEl, data.qr_code, {
+                    await QRCode.toCanvas(canvas, data.qr_code, {
                         width: 256,
                         margin: 2,
                         color: {
                             dark: '#000000',
                             light: '#FFFFFF'
-                        }
+                        },
+                        errorCorrectionLevel: 'M'
                     });
                     
                     statusEl.className = 'status success';
@@ -225,18 +239,28 @@
                     clearInterval(refreshInterval);
                     refreshInterval = setInterval(loadQRCode, 30000);
                     
-                } else {
+                } else if (data.whatsappReady) {
                     statusEl.className = 'status success';
                     statusEl.innerHTML = '✅ WhatsApp Already Connected!';
                     qrcodeEl.innerHTML = '<div style="font-size: 4em; color: #25D366;">✅</div>';
                     clearInterval(refreshInterval);
+                } else {
+                    statusEl.className = 'status loading';
+                    statusEl.innerHTML = '⏳ ' + (data.message || 'Waiting for QR code...');
+                    qrcodeEl.innerHTML = '<div style="color: #666;">🔄 Starting up...</div>';
+                    
+                    // Retry in 5 seconds
+                    setTimeout(loadQRCode, 5000);
                 }
                 
             } catch (error) {
                 console.error('Error loading QR code:', error);
                 statusEl.className = 'status error';
-                statusEl.innerHTML = '❌ Failed to load QR code. Click refresh to try again.';
-                qrcodeEl.innerHTML = '<div style="color: #c62828;">⚠️ Connection Error</div>';
+                statusEl.innerHTML = `❌ Error: ${error.message}`;
+                qrcodeEl.innerHTML = `<div style="color: #c62828;">⚠️ ${error.message}</div>`;
+                
+                // Retry in 10 seconds on error
+                setTimeout(loadQRCode, 10000);
             } finally {
                 refreshBtn.disabled = false;
             }
