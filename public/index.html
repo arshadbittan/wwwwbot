@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WhatsApp Bot - QR Scanner</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #25D366, #128C7E);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            text-align: center;
+            max-width: 500px;
+            width: 100%;
+        }
+        
+        .logo {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        h1 {
+            color: #128C7E;
+            margin-bottom: 10px;
+            font-size: 1.8em;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 1.1em;
+        }
+        
+        .qr-container {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 30px;
+            margin: 30px 0;
+            min-height: 300px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        #qrcode {
+            margin: 20px 0;
+        }
+        
+        .status {
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            font-weight: 500;
+        }
+        
+        .status.loading {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+        
+        .status.success {
+            background: #e8f5e8;
+            color: #2e7d32;
+        }
+        
+        .status.error {
+            background: #ffebee;
+            color: #c62828;
+        }
+        
+        .refresh-btn {
+            background: #25D366;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin: 10px;
+        }
+        
+        .refresh-btn:hover {
+            background: #128C7E;
+            transform: translateY(-2px);
+        }
+        
+        .refresh-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .instructions {
+            background: #f0f8ff;
+            border-left: 4px solid #25D366;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+            text-align: left;
+        }
+        
+        .instructions h3 {
+            color: #128C7E;
+            margin-bottom: 10px;
+        }
+        
+        .instructions ol {
+            margin-left: 20px;
+        }
+        
+        .instructions li {
+            margin: 8px 0;
+            color: #555;
+        }
+        
+        .footer {
+            margin-top: 30px;
+            color: #888;
+            font-size: 0.9em;
+        }
+        
+        @media (max-width: 600px) {
+            .container {
+                padding: 20px;
+                margin: 10px;
+            }
+            
+            h1 {
+                font-size: 1.5em;
+            }
+            
+            .qr-container {
+                padding: 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">📱</div>
+        <h1>WhatsApp Bot Scanner</h1>
+        <p class="subtitle">Scan QR code to connect your WhatsApp</p>
+        
+        <div class="qr-container">
+            <div id="status" class="status loading">
+                🔄 Loading QR Code...
+            </div>
+            <div id="qrcode"></div>
+            <button id="refreshBtn" class="refresh-btn" onclick="loadQRCode()">
+                🔄 Refresh QR Code
+            </button>
+        </div>
+        
+        <div class="instructions">
+            <h3>📋 How to Connect:</h3>
+            <ol>
+                <li>Open WhatsApp on your phone</li>
+                <li>Go to <strong>Settings</strong> → <strong>Linked Devices</strong></li>
+                <li>Tap <strong>"Link a Device"</strong></li>
+                <li>Scan the QR code above</li>
+                <li>Wait for "Connected!" message</li>
+            </ol>
+        </div>
+        
+        <div class="footer">
+            <p>🤖 Bot Status: <span id="botStatus">Checking...</span></p>
+            <p>🕒 Last Updated: <span id="lastUpdate">-</span></p>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+    <script>
+        let refreshInterval;
+        
+        async function loadQRCode() {
+            const statusEl = document.getElementById('status');
+            const qrcodeEl = document.getElementById('qrcode');
+            const refreshBtn = document.getElementById('refreshBtn');
+            const lastUpdateEl = document.getElementById('lastUpdate');
+            
+            try {
+                refreshBtn.disabled = true;
+                statusEl.className = 'status loading';
+                statusEl.innerHTML = '🔄 Loading QR Code...';
+                qrcodeEl.innerHTML = '';
+                
+                const response = await fetch('/qr');
+                const data = await response.json();
+                
+                if (data.qr_code) {
+                    // Generate QR code
+                    await QRCode.toCanvas(qrcodeEl, data.qr_code, {
+                        width: 256,
+                        margin: 2,
+                        color: {
+                            dark: '#000000',
+                            light: '#FFFFFF'
+                        }
+                    });
+                    
+                    statusEl.className = 'status success';
+                    statusEl.innerHTML = '📱 Scan with WhatsApp';
+                    lastUpdateEl.textContent = new Date().toLocaleTimeString();
+                    
+                    // Auto-refresh every 30 seconds
+                    clearInterval(refreshInterval);
+                    refreshInterval = setInterval(loadQRCode, 30000);
+                    
+                } else {
+                    statusEl.className = 'status success';
+                    statusEl.innerHTML = '✅ WhatsApp Already Connected!';
+                    qrcodeEl.innerHTML = '<div style="font-size: 4em; color: #25D366;">✅</div>';
+                    clearInterval(refreshInterval);
+                }
+                
+            } catch (error) {
+                console.error('Error loading QR code:', error);
+                statusEl.className = 'status error';
+                statusEl.innerHTML = '❌ Failed to load QR code. Click refresh to try again.';
+                qrcodeEl.innerHTML = '<div style="color: #c62828;">⚠️ Connection Error</div>';
+            } finally {
+                refreshBtn.disabled = false;
+            }
+        }
+        
+        async function checkBotStatus() {
+            try {
+                const response = await fetch('/api/status');
+                const data = await response.json();
+                const botStatusEl = document.getElementById('botStatus');
+                
+                if (data.whatsappReady) {
+                    botStatusEl.innerHTML = '<span style="color: #25D366;">✅ Connected</span>';
+                } else {
+                    botStatusEl.innerHTML = '<span style="color: #ff9800;">⏳ Connecting...</span>';
+                }
+            } catch (error) {
+                document.getElementById('botStatus').innerHTML = '<span style="color: #f44336;">❌ Offline</span>';
+            }
+        }
+        
+        // Load QR code when page loads
+        window.addEventListener('load', () => {
+            loadQRCode();
+            checkBotStatus();
+            
+            // Check bot status every 10 seconds
+            setInterval(checkBotStatus, 10000);
+        });
+        
+        // Clean up interval when page unloads
+        window.addEventListener('beforeunload', () => {
+            clearInterval(refreshInterval);
+        });
+    </script>
+</body>
+</html>
