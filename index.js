@@ -1,5 +1,6 @@
 const { Client, NoAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
+const QRCode = require('qrcode');
 const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
@@ -233,6 +234,37 @@ app.get('/qr', (req, res) => {
             message: error.message,
             success: false
         });
+    }
+});
+
+// Endpoint to get QR code as image
+app.get('/qr-image', async (req, res) => {
+    console.log('QR image endpoint called');
+    
+    try {
+        if (currentQRCode) {
+            console.log('Generating QR image, data length:', currentQRCode.length);
+            
+            // Generate QR code as PNG buffer
+            const qrBuffer = await QRCode.toBuffer(currentQRCode, {
+                type: 'png',
+                width: 256,
+                margin: 2,
+                color: {
+                    dark: '#000000',
+                    light: '#FFFFFF'
+                }
+            });
+            
+            res.setHeader('Content-Type', 'image/png');
+            res.setHeader('Cache-Control', 'no-cache');
+            res.send(qrBuffer);
+        } else {
+            res.status(404).json({ error: 'No QR code available' });
+        }
+    } catch (error) {
+        console.error('Error generating QR image:', error);
+        res.status(500).json({ error: 'Failed to generate QR image' });
     }
 });
 
