@@ -1,4 +1,4 @@
-const { Client, RemoteAuth } = require('whatsapp-web.js');
+const { Client, NoAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const express = require('express');
 const bodyParser = require('body-parser');
@@ -20,73 +20,9 @@ const supabase = createClient(
     process.env.SUPABASE_ANON_KEY
 );
 
-// Custom store for WhatsApp session using Supabase
-class SupabaseStore {
-    async sessionExists(options) {
-        try {
-            const { data } = await supabase
-                .from('whatsapp_sessions')
-                .select('session_data')
-                .eq('session_id', options.session)
-                .single();
-            return !!data;
-        } catch {
-            return false;
-        }
-    }
-
-    async save(options) {
-        try {
-            await supabase
-                .from('whatsapp_sessions')
-                .upsert([
-                    {
-                        session_id: options.session,
-                        session_data: JSON.stringify(options.data),
-                        updated_at: new Date().toISOString()
-                    }
-                ]);
-            console.log('Session saved to Supabase');
-        } catch (error) {
-            console.error('Error saving session:', error);
-        }
-    }
-
-    async extract(options) {
-        try {
-            const { data } = await supabase
-                .from('whatsapp_sessions')
-                .select('session_data')
-                .eq('session_id', options.session)
-                .single();
-            
-            return data ? JSON.parse(data.session_data) : null;
-        } catch (error) {
-            console.error('Error extracting session:', error);
-            return null;
-        }
-    }
-
-    async delete(options) {
-        try {
-            await supabase
-                .from('whatsapp_sessions')
-                .delete()
-                .eq('session_id', options.session);
-            console.log('Session deleted from Supabase');
-        } catch (error) {
-            console.error('Error deleting session:', error);
-        }
-    }
-}
-
-// WhatsApp client with persistent session storage
-const store = new SupabaseStore();
+// WhatsApp client with no persistent auth (simpler for free hosting)
 const client = new Client({
-    authStrategy: new RemoteAuth({
-        store: store,
-        backupSyncIntervalMs: 300000 // 5 minutes
-    }),
+    authStrategy: new NoAuth(),
     puppeteer: {
         headless: true,
         args: [
@@ -105,6 +41,7 @@ const client = new Client({
 // Store current QR code in memory
 let currentQRCode = null;
 let isWhatsAppReady = false;
+let qrCodeTimestamp = null;
 
 // FAQ responses
 const faqResponses = {
@@ -118,27 +55,42 @@ const faqResponses = {
 // Initialize WhatsApp client
 client.on('qr', (qr) => {
     console.log('QR Code received, scan with WhatsApp:');
+    console.log('QR Code length:', qr.length);
     qrcode.generate(qr, { small: true });
-
+    
     // Store QR code in memory for web access
     currentQRCode = qr;
-    console.log('QR code available at: https://wwwwbot.onrender.com/qr');
+    qrCodeTimestamp = new Date().toISOString();
+    isWhatsAppReady = false;
+    
+    console.log('QR code available at: https://wwwwbot.onrender.com');
+    console.log('QR code stored in memory successfully');
 });
 
 client.on('ready', () => {
     console.log('WhatsApp client is ready!');
     currentQRCode = null; // Clear QR code when connected
     isWhatsAppReady = true;
+    qrCodeTimestamp = null;
 });
 
 client.on('disconnected', (reason) => {
     console.log('WhatsApp client disconnected:', reason);
     currentQRCode = null;
     isWhatsAppReady = false;
+    qrCodeTimestamp = null;
+    
+    // Restart client after disconnection
+    setTimeout(() => {
+        console.log('Restarting WhatsApp client...');
+        client.initialize();
+    }, 5000);
 });
 
-client.on('remote_session_saved', () => {
-    console.log('Session saved remotely');
+client.on('auth_failure', (msg) => {
+    console.error('Authentication failed:', msg);
+    currentQRCode = null;
+    isWhatsAppReady = false;
 });
 
 client.on('message', async (message) => {
@@ -216,27 +168,54 @@ app.get('/api/status', (req, res) => {
     res.json({
         status: 'WhatsApp Bot is running',
         timestamp: new Date().toISOString(),
-        whatsappReady: isWhatsAppReady
+        whatsappReady: isWhatsAppReady,
+        hasQRCode: !!currentQRCode,
+        qrTimestamp: qrCodeTimestamp
+    });
+});
+
+// Debug endpoint
+app.get('/debug', (req, res) => {
+    res.json({
+        currentQRCode: !!currentQRCode,
+        qrCodeLength: currentQRCode ? currentQRCode.length : 0,
+        isWhatsAppReady: isWhatsAppReady,
+        qrCodeTimestamp: qrCodeTimestamp,
+        clientState: client.info ? 'has_info' : 'no_info',
+        timestamp: new Date().toISOString()
     });
 });
 
 // Endpoint to get QR code for scanning
 app.get('/qr', (req, res) => {
+    console.log('QR endpoint called');
+    console.log('currentQRCode exists:', !!currentQRCode);
+    console.log('isWhatsAppReady:', isWhatsAppReady);
+    console.log('qrCodeTimestamp:', qrCodeTimestamp);
+    
     if (currentQRCode) {
+        console.log('Sending QR code to client');
         res.json({
             qr_code: currentQRCode,
-            timestamp: new Date().toISOString(),
+            timestamp: qrCodeTimestamp || new Date().toISOString(),
             message: 'Scan this QR code with WhatsApp'
         });
     } else if (isWhatsAppReady) {
+        console.log('WhatsApp already connected');
         res.json({
             message: 'WhatsApp is already connected! No need to scan QR code.',
             whatsappReady: true
         });
     } else {
+        console.log('No QR code available, bot starting up');
         res.json({
             message: 'Bot is starting up... Please wait a moment and refresh.',
-            whatsappReady: false
+            whatsappReady: false,
+            debug: {
+                hasQRCode: !!currentQRCode,
+                isReady: isWhatsAppReady,
+                timestamp: new Date().toISOString()
+            }
         });
     }
 });

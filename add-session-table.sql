@@ -9,5 +9,5 @@ CREATE TABLE IF NOT EXISTS whatsapp_sessions (
 
 ALTER TABLE whatsapp_sessions ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow service role access" ON whatsapp_sessions
+CREATE POLICY "Allow service role access sessions" ON whatsapp_sessions
   FOR ALL USING (auth.role() = 'service_role');
